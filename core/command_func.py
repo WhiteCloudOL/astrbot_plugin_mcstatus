@@ -14,6 +14,7 @@ class CommandFunc:
         pass
 
 
+
     async def _lookup_server(self, server_addr: str):
         """查询服务器信息"""
         try:
@@ -88,10 +89,10 @@ class CommandFunc:
         """
         if server_status is None:
             return (f"❌ 无法获取服务器的状态\n"
-                                  "请检查：\n"
-                                  "1. 服务器地址是否正确\n"
-                                  "2. 服务器是否在线\n"
-                                  "3. 端口是否正确（默认25565）")
+                    "请检查：\n"
+                    "1. 服务器地址是否正确\n"
+                    "2. 服务器是否在线\n"
+                    "3. 端口是否正确（默认25565）")
         
         players_list = self.tras_players_to_string(server_status['players'])
 
@@ -228,15 +229,15 @@ class CommandFunc:
         return '\n'.join(result_lines)
 
     async def _handle_motd(self, event: AstrMessageEvent, server_addr: str):
-            """
-            Command: /mcstatus motd
-            Usage: 获取JE服务器MOTD
-            """
-            if server_addr is None:
-                return event.plain_result("❌格式错误！正确用法：/mcstatus motd 服务器地址")
-            else:
-                server_status = await self.get_server_status(server_addr)
-                return event.plain_result(self.to_string(server_status))
+        """
+        Command: /mcstatus motd
+        Usage: 获取JE服务器MOTD
+        """
+        if server_addr is None:
+            return event.plain_result("❌格式错误！正确用法：/mcstatus motd 服务器地址")
+        else:
+            server_status = await self.get_server_status(server_addr)
+            return event.plain_result(self.to_string(server_status))
 
     async def _handle_players(self, event: AstrMessageEvent, server_addr: str = None):
         """
@@ -318,7 +319,7 @@ class CommandFunc:
     async def _handle_clear(self,event: AstrMessageEvent):
         self.admin_list = self.bot_config["admins_id"]
         if event.get_sender_id() not in self.admin_list:
-            return event.plain_result(f"❌清空失败，杂鱼 {event.get_sender_name()}(id:{event.get_sender_id()}) 的权限不足还妄想清空呢~")
+            return event.plain_result(f"❌清空失败，杂鱼{event.get_sender_name()}(id:{event.get_sender_id()}) 的权限不足还妄想清空呢~")
         if self.datamanager.clear_all_configs():
             return event.plain_result("✅清空成功")
         else:
@@ -338,9 +339,10 @@ class CommandFunc:
                   " ├─ del [名称]  -> 删除服务器\n" 
                   " ├─ look [名称] ->查询服务器名称对应的服务器信息\n"
                   " ├─ list  ->显示所有已存储服务器，默认显示第一页\n"
-                  " └─ clear ->删除所有存储服务器 *管理员命令\n"
-                  "/draw [text] -> 绘制文本",
-                  font_size=90,target_size=(1200,680))
+                  " └─ clear ->删除所有存储服务器 *管理员命令\n",
+                  #"/draw [text] -> 绘制文本",
+            font_size=90,
+            target_size=(1200,620))
         if success:
             return event.image_result(result_path_or_error)
         else:

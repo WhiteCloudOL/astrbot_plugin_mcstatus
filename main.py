@@ -26,6 +26,18 @@ class mcstatus(Star):
                                        plugin_version=plugin_version,
                                        config=self.config)
 
+    def enabled_check(self, event: AstrMessageEvent) -> bool:
+        group_id = event.get_group_id()
+        mode = self.config["divide_group"]["block_method"]
+        group_list = self.config["divide_group"].get("control_list",[])
+        if mode == "blacklist":
+            if group_id in group_list:
+                return False
+            return True
+        elif mode == "whitelist":
+            if group_id in group_list:
+                return True
+            return False
 
     @filter.command("mcstatus",alias=["mc状态","MC状态","mcs"])
     async def mcstatus(self,
@@ -36,6 +48,8 @@ class mcstatus(Star):
         """
         插件主函数,/mcstatus help获取帮助
         """
+        if not self.enabled_check(event):
+            return
         match subcommand:
             case None:
                 yield event.plain_result("❌缺少参数，请输入/mcstatus help查询用法")
@@ -69,31 +83,32 @@ class mcstatus(Star):
             case _:
                 yield event.plain_result("❌无相关指令，请输入/mcstatus help查询用法")
 
-    @filter.command("draw")
-    async def draw(self, event: AstrMessageEvent):
-        """
-        绘图命令（测试）
-        """
-        messages = event.message_str.split(' ',1)
-        if len(messages)<2:
-            final_text = "AstrBot Plugin@清蒸云鸭\n未检测到输入字符串！"
-        else:
-            final_text = messages[1].strip()
-            if final_text == "":
-                final_text = "AstrBot Plugin@清蒸云鸭\n未检测到输入字符串！"
-        logger.info(f"生成文本图片：{final_text}")
-        final_text = self.commandFunc.auto_wrap_text(final_text,20)
-        line_count = final_text.count('\n')
-        if line_count==0:
-            line_count+=1
-        drawing = Draw(output=self.draw_output_path)
-        success, result_path_or_error = await drawing.create_image_with_text(text=final_text,seted_font=self.config["font"],font_size=60,target_size=(1200,100+60*line_count))
-        if success:
-            yield event.image_result(result_path_or_error)
-        else:
-            yield event.plain_result(result_path_or_error)
+    # @filter.command("draw")
+    # async def draw(self, event: AstrMessageEvent):
+    #     """
+    #     绘图命令（测试）
+    #     """
+    #     messages = event.message_str.split(' ',1)
+    #     if len(messages)<2:
+    #         final_text = "AstrBot Plugin@清蒸云鸭\n未检测到输入字符串！"
+    #     else:
+    #         final_text = messages[1].strip()
+    #         if final_text == "":
+    #             final_text = "AstrBot Plugin@清蒸云鸭\n未检测到输入字符串！"
+    #     logger.info(f"生成文本图片：{final_text}")
+    #     final_text = self.commandFunc.auto_wrap_text(final_text,20)
+    #     line_count = final_text.count('\n')
+    #     if line_count==0:
+    #         line_count+=1
+    #     drawing = Draw(output=self.draw_output_path)
+    #     success, result_path_or_error = await drawing.create_image_with_text(text=final_text,seted_font=self.config["font"],font_size=60,target_size=(1200,100+60*line_count))
+    #     if success:
+    #         yield event.image_result(result_path_or_error)
+    #     else:
+    #         yield event.plain_result(result_path_or_error)
 
     
     async def terminate(self):
-        self.datamanager.save_config()
+        if self.datamanager.save_config():
+            logger.info("数据保存成功，已卸载插件！")
         '''可选择实现 terminate 函数，当插件被卸载/停用时会调用。'''

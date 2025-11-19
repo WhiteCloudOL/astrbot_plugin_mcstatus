@@ -12,23 +12,23 @@
     "hint": "分群控制设置",
     "obvious_hint": true,
     "items": {
-      "enable": {
+      "divide_data": {
         "description": "启用分群存储（暂未生效）",
         "type": "bool",
         "hint": "设置是否启用数据分群存储",
         "default": false
       },
       "block_method": {
-        "description": "阻止模式（暂未生效）",
+        "description": "阻止模式",
         "type": "string",
         "hint": "设置黑白名单模式",
         "default": "blacklist",
         "options": ["blacklist", "whitelist"]
       },
       "control_list": {
-        "description": "名单列表（暂未生效）",
+        "description": "名单列表",
         "type": "list",
-        "hint": "设置名单列表",
+        "hint": "设置名单列表，填群号(group_id)",
         "default": []
       }
     }

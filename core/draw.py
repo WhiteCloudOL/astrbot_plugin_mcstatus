@@ -12,7 +12,6 @@ class Draw:
         self.output = output
         os.makedirs(os.path.dirname(self.output), exist_ok=True)
 
-    # 辅助函数
     def draw_text_with_outline(self, draw: ImageDraw.ImageDraw, x: float, y: float,
                                text: str, font: ImageFont.FreeTypeFont,
                                text_color=(255, 255, 255), outline_color=(0, 0, 0),
@@ -32,12 +31,11 @@ class Draw:
         获取优先的字体路径列表（存在的才返回）
         """
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        plugin_font_dir = os.path.join(os.path.dirname(__file__), '..', 'assess')
+        plugin_font_dir = os.path.join(os.path.dirname(__file__), '..', 'assets')
         custom_font_path = os.path.join(plugin_font_dir, seted_font)
 
         candidate = [
             custom_font_path,
-            # 常见字体/插件自带
             "C:/Windows/Fonts/simhei.ttf",
             "C:/Windows/Fonts/msyh.ttc",
             "C:/Windows/Fonts/simsun.ttc",
@@ -49,7 +47,6 @@ class Draw:
             "/Library/Fonts/Arial Bold.ttf",
             "/Library/Fonts/Microsoft YaHei.ttf",
             "/System/Library/Fonts/PingFang.ttc",
-            # 以及常见名称（系统会在当前工作目录或字体目录中查找）
             "simhei.ttf",
             "msyh.ttc",
             "msyhbd.ttc",
@@ -68,7 +65,6 @@ class Draw:
                     else:
                         existing.append(p)
                 else:
-                    # 有些候选是相对路径或放在当前目录下，尝试组合 current_dir
                     local = os.path.join(current_dir, p)
                     if os.path.exists(local):
                         if local == custom_font_path:
@@ -106,7 +102,6 @@ class Draw:
             for size in sizes_to_try:
                 try:
                     test_font = ImageFont.truetype(font_path, size)
-                    # 用临时画布测量
                     tmp_img = Image.new("RGBA", (10, 10))
                     tmp_draw = ImageDraw.Draw(tmp_img)
                     bbox = tmp_draw.textbbox((0, 0), text, font=test_font)
@@ -117,7 +112,6 @@ class Draw:
                 except Exception:
                     continue
 
-        # fallback
         try:
             if font_paths:
                 fallback_path = font_paths[0]
@@ -245,7 +239,7 @@ class Draw:
     # -------------------- 主入口 & 快速接口 --------------------
     async def create_image_with_text(self,
                                      text: str,
-                                     background_path: str = os.path.join(os.path.dirname(__file__), '..', 'assess', 'bg.png'),
+                                     background_path: str = os.path.join(os.path.dirname(__file__), '..', 'assets', 'bg.png'),
                                      output_path: str = None,
                                      seted_font: str = "cute_font.ttf",
                                      font_size: int = 60,
