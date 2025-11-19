@@ -48,6 +48,12 @@ git clone https://cdn.gh-proxy.com/https://github.com/WhiteCloudOL/astrbot_plugi
 *(2025/10/17)*  
 1. 修复：f-String错误导致的插件无法正常  
 
+### v1.0.6
+*(2025/11/19)*
+1. 修正：assess -> assets
+2. 群组黑白名单检查
+3. 移除draw命令
+
 # TODO
 ❌分群存储  
 ❌list分页查询  
