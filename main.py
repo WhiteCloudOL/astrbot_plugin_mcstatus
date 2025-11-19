@@ -1,12 +1,13 @@
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star, StarTools, register
+from astrbot.core.platform.message_type import MessageType
 from .core.data_manager import DataManager
 from .core.draw import Draw
 from .core.command_func import CommandFunc
 import os
 
-plugin_version = "1.0.5"
+plugin_version = "1.0.6"
 
 @register("mcstatus", "WhiteCloudCN", "一个获取MC服务器状态的插件", plugin_version)
 class mcstatus(Star):
@@ -26,10 +27,13 @@ class mcstatus(Star):
                                        plugin_version=plugin_version,
                                        config=self.config)
 
-    def enabled_check(self, event: AstrMessageEvent) -> bool:
+    def enabled_group_check(self, event: AstrMessageEvent) -> bool:
+        """权限检查，私聊跳过"""
         group_id = event.get_group_id()
         mode = self.config["divide_group"]["block_method"]
         group_list = self.config["divide_group"].get("control_list",[])
+        if event.get_message_type() != MessageType.GROUP_MESSAGE:
+            return True
         if mode == "blacklist":
             if group_id in group_list:
                 return False
@@ -38,6 +42,7 @@ class mcstatus(Star):
             if group_id in group_list:
                 return True
             return False
+        return False
 
     @filter.command("mcstatus",alias=["mc状态","MC状态","mcs"])
     async def mcstatus(self,
@@ -48,7 +53,7 @@ class mcstatus(Star):
         """
         插件主函数,/mcstatus help获取帮助
         """
-        if not self.enabled_check(event):
+        if not self.enabled_group_check(event):
             return
         match subcommand:
             case None:
