@@ -6,6 +6,13 @@
     "default": "cute_font.ttf",
     "obvious_hint": true
   },
+  "bg": {
+    "description": "绘图背景",
+    "type": "string",
+    "hint": "设置绘图字体，可自定义字体放置于-插件目录/assess/xxx(.jpg/.png)",
+    "default": "bg.jpg",
+    "obvious_hint": true
+  },
   "divide_group": {
     "description": "分群控制",
     "type": "object",

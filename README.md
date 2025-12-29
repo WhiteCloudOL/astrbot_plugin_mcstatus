@@ -1,7 +1,11 @@
 # Astrbot Plugin MCStatus
-v1.0.6
+**v2.0.0** 全新版本上线~
 AstrBot Plugin - MCStatus  
-Author: WhiteCloudCN  
+Author: 清蒸云鸭  
+
+## 预览  
+支持图标渲染、MOTD渲染、玩家查询等  
+![](https://free.picui.cn/free/2025/12/29/69528c2c45858.png)  
 
 # 安装  
 ### 自动安装
@@ -30,10 +34,9 @@ git clone https://cdn.gh-proxy.com/https://github.com/WhiteCloudOL/astrbot_plugi
 
 # 用法  
 `/mcstatus help/motd/list/players/look/add/set/del/clear` 插件主命令  
-`/draw [text] `绘制图片  
 推荐使用`/mcstatus help`获取帮助  
 插件命令别名可用`mc状态` `MC状态` `mcs`  
-例如`/mcs motd mc.catyun.cyou`  
+例如`/mcs motd mc.example.com`  
 
 
 # 更新日志  
@@ -53,6 +56,12 @@ git clone https://cdn.gh-proxy.com/https://github.com/WhiteCloudOL/astrbot_plugi
 1. 修正：assess -> assets
 2. 群组黑白名单检查
 3. 移除draw命令
+
+### v2.0.0
+*(2025/12/29)*
+1. 支持查询服务器图标  
+2. 支持MOTD彩色渲染  
+3. 大幅美化插件输出  
 
 # TODO
 ❌分群存储  

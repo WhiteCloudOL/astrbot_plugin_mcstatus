@@ -2,9 +2,10 @@ from astrbot.api import logger
 import json,os,re
 from astrbot.api.star import StarTools
 from typing import Dict, List, Optional
+from pathlib import Path
 
 class DataManager:
-    def __init__(self, config_file: str = None):
+    def __init__(self, config_file: Path = None):
         if config_file is None:
             plugin_data_dir = StarTools.get_data_dir("mcstatus")
             config_file=plugin_data_dir / "mcstatus.json"

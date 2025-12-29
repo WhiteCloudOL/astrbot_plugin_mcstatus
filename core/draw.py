@@ -1,312 +1,342 @@
 from astrbot.api import logger
-from astrbot.api.star import StarTools
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageFilter
 import os
 import asyncio
-from typing import List, Tuple
-
+import re
+import base64
+import io
+import datetime
+from typing import Tuple, Union, List, Dict, Optional
 
 class Draw:
-    def __init__(self,output = f"{StarTools.get_data_dir('mcstatus')}/draw_temp.png"):
-        """初始化图片生成器，设置默认输出路径"""
-        self.output = output
-        os.makedirs(os.path.dirname(self.output), exist_ok=True)
+    def __init__(self, output_path: str, bg_path: str):
+        self.output_path = output_path
+        self.assets_dir = os.path.join(os.path.dirname(__file__), '..', 'assets')
+        self.user_bg_name = bg_path 
+        self.default_bg_path = os.path.join(self.assets_dir, 'bg.jpg')
+        self.default_icon_path = os.path.join(self.assets_dir, 'default_icon.png')
+        
+        os.makedirs(os.path.dirname(self.output_path), exist_ok=True)
+        
+        # 基础配置
+        self.CARD_WIDTH = 1200 
+        self.CARD_HEIGHT = 580
+        
+        # MC 颜色代码映射
+        self.MC_COLORS = {
+            '0': (0, 0, 0),       '1': (0, 0, 170),     '2': (0, 170, 0),     '3': (0, 170, 170),
+            '4': (170, 0, 0),     '5': (170, 0, 170),   '6': (255, 170, 0),   '7': (170, 170, 170),
+            '8': (85, 85, 85),    '9': (85, 85, 255),   'a': (85, 255, 85),   'b': (85, 255, 255),
+            'c': (255, 85, 85),   'd': (255, 85, 255),  'e': (255, 255, 85),  'f': (255, 255, 255),
+            'g': (221, 214, 5),   'r': (80, 80, 80)
+        }
+        
+        # 可爱/糖果风格主题
+        self.CUTE_THEME = {
+            "bg_fallback": (255, 245, 250), "card_bg": (255, 255, 255, 235), "card_border": (255, 220, 230),
+            "shadow": (255, 190, 210, 100), "text_main": (90, 80, 105), "text_label": (150, 130, 160),
+            "text_footer": (170, 160, 180), "pill_blue": (210, 240, 255), "pill_pink": (255, 225, 235),
+            "pill_text_blue": (80, 140, 200), "pill_text_pink": (200, 100, 120),
+            "accent": (255, 160, 180), "ping_good": (160, 235, 180),
+            "ping_mid": (255, 225, 160), "ping_bad": (255, 180, 180), "progress_bg": (245, 245, 255),
+            "progress_fill": (170, 230, 255), "progress_border": (200, 240, 255)
+        }
 
-    def draw_text_with_outline(self, draw: ImageDraw.ImageDraw, x: float, y: float,
-                               text: str, font: ImageFont.FreeTypeFont,
-                               text_color=(255, 255, 255), outline_color=(0, 0, 0),
-                               outline_width: int = 1):
-        """绘制带描边的单行文字（描边通过多次偏移绘制实现）"""
-        # 描边
-        for dx in range(-outline_width, outline_width + 1):
-            for dy in range(-outline_width, outline_width + 1):
-                if dx == 0 and dy == 0:
-                    continue
-                draw.text((x + dx, y + dy), text, font=font, fill=outline_color)
-        # 正文
-        draw.text((x, y), text, font=font, fill=text_color)
-
-    def get_font_paths(self, seted_font: str = "cute_font.ttf") -> List[str]:
-        """
-        获取优先的字体路径列表（存在的才返回）
-        """
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        plugin_font_dir = os.path.join(os.path.dirname(__file__), '..', 'assets')
-        custom_font_path = os.path.join(plugin_font_dir, seted_font)
-
-        candidate = [
-            custom_font_path,
-            "C:/Windows/Fonts/simhei.ttf",
-            "C:/Windows/Fonts/msyh.ttc",
-            "C:/Windows/Fonts/simsun.ttc",
-            "C:/Windows/Fonts/arial.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-            "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
-            "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
-            "/Library/Fonts/Arial Bold.ttf",
-            "/Library/Fonts/Microsoft YaHei.ttf",
-            "/System/Library/Fonts/PingFang.ttc",
-            "simhei.ttf",
-            "msyh.ttc",
-            "msyhbd.ttc",
-            "simsun.ttc",
-            "arial.ttf",
+    def get_font(self, font_name: str, size: int) -> Union[ImageFont.ImageFont, ImageFont.FreeTypeFont]:
+        paths = [
+            os.path.join(self.assets_dir, font_name),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', font_name)
         ]
+        for p in paths:
+            if os.path.exists(p):
+                try: return ImageFont.truetype(p, size)
+                except: pass
+        try: return ImageFont.truetype("arial rounded mt bold.ttf", size)
+        except:
+            try: return ImageFont.truetype("arial.ttf", size)
+            except: return ImageFont.load_default()
 
-        existing = []
-        custom_found = False
-        for p in candidate:
-            try:
-                if os.path.exists(p):
-                    if p == custom_font_path:
-                        custom_found = True
-                        existing.insert(0, p)
-                    else:
-                        existing.append(p)
-                else:
-                    local = os.path.join(current_dir, p)
-                    if os.path.exists(local):
-                        if local == custom_font_path:
-                            custom_found = True
-                            existing.insert(0, local)
-                        else:
-                            existing.append(local)
-            except Exception:
+    def decode_icon(self, base64_str: str) -> Image.Image:
+        try:
+            if not base64_str: raise ValueError
+            if "," in base64_str: _, encoded = base64_str.split(",", 1)
+            else: encoded = base64_str
+            data = base64.b64decode(encoded)
+            img = Image.open(io.BytesIO(data)).convert("RGBA")
+            return img
+        except:
+            if os.path.exists(self.default_icon_path): return Image.open(self.default_icon_path).convert("RGBA")
+            return Image.new('RGBA', (64, 64), (255, 230, 235))
+
+    def draw_colored_text(self, draw: ImageDraw.ImageDraw, xy: Tuple[int, int], text: str, font: Union[ImageFont.ImageFont, ImageFont.FreeTypeFont]) -> int:
+        default_color = self.CUTE_THEME["text_main"]
+        x_start, y_start = xy
+        current_x = float(x_start)
+        parts = re.split(r'(§[0-9a-fk-or])', text)
+        current_color = default_color
+        for part in parts:
+            if part.startswith('§') and len(part) == 2:
+                code = part[1].lower()
+                if code in self.MC_COLORS: current_color = self.MC_COLORS[code]
+                if code == 'r': current_color = default_color
                 continue
+            if part:
+                draw.text((current_x, y_start), part, font=font, fill=current_color)
+                if hasattr(draw, 'textlength'): length = draw.textlength(part, font=font)
+                else:
+                    bbox = draw.textbbox((0, 0), part, font=font)
+                    length = bbox[2] - bbox[0]
+                current_x += length
+        return int(current_x)
 
-        if custom_found:
-            logger.info(f"[mcstatus]使用自定义字体: {seted_font}")
+    def draw_cute_label(self, draw, x, y, text, font, bg_color, text_color=None):
+        if text_color is None: text_color = self.CUTE_THEME["text_label"]
+        bbox = draw.textbbox((x, y), text, font=font)
+        padding_x, padding_y = 12, 4
+        bg_box = (bbox[0] - padding_x, bbox[1] - padding_y, bbox[2] + padding_x, bbox[3] + padding_y)
+        draw.rounded_rectangle(bg_box, radius=15, fill=bg_color)
+        draw.text((x, y), text, font=font, fill=text_color)
+        return bg_box[2]
+
+    # 通用画布初始化
+    async def _init_canvas(self, W, H, icon_data) -> Tuple[Image.Image, ImageDraw.ImageDraw, int, int]:
+        loop = asyncio.get_event_loop()
+        
+        # 背景
+        bg_path = self.default_bg_path
+        user_bg = os.path.join(self.assets_dir, self.user_bg_name)
+        if os.path.exists(user_bg): bg_path = user_bg
+        
+        if os.path.exists(bg_path):
+            bg = await loop.run_in_executor(None, Image.open, bg_path)
+            bg = ImageOps.fit(bg, (W, H), method=Image.Resampling.LANCZOS)
+            bg = bg.filter(ImageFilter.GaussianBlur(12)) 
+            bg = bg.convert("RGBA")
+            white_overlay = Image.new("RGBA", (W, H), (255, 255, 255, 100))
+            bg = Image.alpha_composite(bg, white_overlay)
         else:
-            logger.debug(f"[mcstatus]自定义字体未找到: {seted_font}，使用候选字体列表中的可用项")
+            bg = Image.new("RGBA", (W, H), self.CUTE_THEME["bg_fallback"])
 
-        return existing
+        # 卡片容器
+        overlay = Image.new("RGBA", (W, H), (0,0,0,0))
+        draw_overlay = ImageDraw.Draw(overlay)
+        
+        margin = 35
+        card_box = (margin, margin, W-margin, H-margin)
+        card_radius = 35
+        shadow_offset = 8
+        draw_overlay.rounded_rectangle(
+            (card_box[0]+shadow_offset, card_box[1]+shadow_offset, card_box[2]+shadow_offset, card_box[3]+shadow_offset), 
+            radius=card_radius, fill=self.CUTE_THEME["shadow"]
+        )
+        draw_overlay.rounded_rectangle(card_box, radius=card_radius, fill=self.CUTE_THEME["card_bg"])
+        draw_overlay.rounded_rectangle(card_box, radius=card_radius, outline=self.CUTE_THEME["card_border"], width=3)
+        
+        bg = Image.alpha_composite(bg, overlay)
+        draw = ImageDraw.Draw(bg)
 
-    def find_best_font(self, text: str, max_width: int, font_paths: List[str], base_font_size: int = 60):
-        """
-        在 font_paths 中查找能适合 max_width 的字体（返回 ImageFont 和最终大小）。
-        尝试几种大小，首个通过宽度判断的字体即返回。
-        """
-        # 依据文本长度粗略调整 base size
-        bf = base_font_size
-        if len(text) > 30:
-            bf = int(bf * 0.6)
-        elif len(text) > 20:
-            bf = int(bf * 0.8)
-        elif len(text) > 10:
-            bf = int(bf * 0.9)
+        # 图标
+        icon_size = 150
+        icon_x, icon_y = margin + 40, margin + 45
+        icon_img = self.decode_icon(icon_data)
+        icon_img = icon_img.resize((icon_size, icon_size), Image.Resampling.LANCZOS)
+        mask = Image.new("L", (icon_size, icon_size), 0)
+        ImageDraw.Draw(mask).ellipse((0, 0, icon_size, icon_size), fill=255)
+        ring_offset = 6
+        draw.ellipse(
+            (icon_x - ring_offset, icon_y - ring_offset, icon_x + icon_size + ring_offset, icon_y + icon_size + ring_offset),
+            fill=self.CUTE_THEME["bg_fallback"], outline=self.CUTE_THEME["card_border"], width=3
+        )
+        bg.paste(icon_img, (icon_x, icon_y), mask)
 
-        sizes_to_try = [bf, max(8, bf - 6), max(8, bf - 12), bf + 6]
+        content_x = icon_x + icon_size + 50
+        content_y = icon_y + 5
+        return bg, draw, content_x, content_y
 
-        for font_path in font_paths:
-            for size in sizes_to_try:
-                try:
-                    test_font = ImageFont.truetype(font_path, size)
-                    tmp_img = Image.new("RGBA", (10, 10))
-                    tmp_draw = ImageDraw.Draw(tmp_img)
-                    bbox = tmp_draw.textbbox((0, 0), text, font=test_font)
-                    text_w = bbox[2] - bbox[0]
-                    if text_w <= max_width * 0.9:  # 留一些边距
-                        logger.info(f"[mcstatus]选择字体: {os.path.basename(font_path)} 大小: {size}")
-                        return test_font, size
-                except Exception:
-                    continue
-
+    # [大幅美化] 帮助菜单绘制逻辑
+    async def draw_help(self, data_map: Dict, seted_font_name: str) -> Tuple[bool, str]:
         try:
-            if font_paths:
-                fallback_path = font_paths[0]
-                f = ImageFont.truetype(fallback_path, bf)
-                logger.warning("[mcstatus]未找到完全合适字体，使用第一个可用字体")
-                return f, bf
-        except Exception:
-            pass
-
-        logger.warning("[mcstatus]使用系统默认字体（ImageFont.load_default）")
-        return ImageFont.load_default(), bf
-
-    def _measure_multiline(self, draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont,
-                           spacing: int = 4) -> Tuple[int, int, List[Tuple[int, int]]]:
-        """
-        测量多行文本的最大宽度与总高度（返回 max_width, total_height, per_line_sizes）。
-        spacing: 行间距像素
-        """
-        lines = text.splitlines() or [text]
-        sizes = []
-        max_w = 0
-        total_h = 0
-        for i, line in enumerate(lines):
-            if line == "":
-                # 空行要给出高度（用单个空格测量）
-                bbox = draw.textbbox((0, 0), " ", font=font)
-            else:
-                bbox = draw.textbbox((0, 0), line, font=font)
-            w = bbox[2] - bbox[0]
-            h = bbox[3] - bbox[1]
-            sizes.append((w, h))
-            if w > max_w:
-                max_w = w
-            total_h += h
-            if i != len(lines) - 1:
-                total_h += spacing
-        return max_w, total_h, sizes
-
-    # 渲染方法（左上角60,60）
-    async def create_high_quality_image(self, text: str, background: Image.Image, output_path: str,
-                                        seted_font: str, font_size: int = 60,
-                                        scale_factor: int = 2, spacing: int = 6):
-        """
-        异步高质量渲染（超采样）
-        font_size: 基础字体大小（在 hi-res 上会乘以 scale_factor）
-        spacing: 行间距（基于最终字体像素）
-        """
-        try:
-            original_size = background.size
-            hi_res_size = (original_size[0] * scale_factor, original_size[1] * scale_factor)
-
             loop = asyncio.get_event_loop()
-            hi_res_bg = await loop.run_in_executor(None, lambda: background.resize(hi_res_size, Image.LANCZOS))
-            draw = ImageDraw.Draw(hi_res_bg)
-            hi_res_font_size = int(font_size * scale_factor)
-            hi_res_spacing = int(spacing * scale_factor)
+            W = self.CARD_WIDTH
+            # [修改] 高度改为 800，紧凑且美观
+            H = 800 
 
-            font_paths = await loop.run_in_executor(None, lambda: self.get_font_paths(seted_font))
-            font, actual_size = await loop.run_in_executor(
-                None, lambda: self.find_best_font(text, hi_res_size[0], font_paths, hi_res_font_size)
-            )
+            bg, draw, content_x, content_y = await self._init_canvas(W, H, data_map.get("server_icon", ""))
+            
+            font_title = self.get_font(seted_font_name, 42)
+            font_subtitle = self.get_font(seted_font_name, 26)
+            font_cmd = self.get_font(seted_font_name, 28) # 指令字体
+            font_desc = self.get_font(seted_font_name, 26) # 描述字体
+            font_footer = self.get_font(seted_font_name, 18)
 
-            max_w, total_h, per_line = self._measure_multiline(draw, text, font, spacing=hi_res_spacing)
-            outline_w = max(1, int(scale_factor))
+            # --- 标题区域 ---
+            plugin_ver = data_map.get("version", "1.0.0")
+            draw.text((content_x, content_y + 10), "MCStatus 插件帮助", font=font_title, fill=self.CUTE_THEME["text_main"])
+            # 绘制版本号小胶囊
+            ver_x = content_x + 360
+            self.draw_cute_label(draw, ver_x+15, content_y + 20, f"Ver {plugin_ver}", font_subtitle, self.CUTE_THEME["pill_pink"], self.CUTE_THEME["pill_text_pink"])
 
-            # 左上角 60,60 起点
-            y = 60 * scale_factor
-            for idx, line in enumerate(text.splitlines() or [text]):
-                w, h = per_line[idx]
-                x = 60 * scale_factor  # 左对齐固定 x
-                if line == "":
-                    y += h + hi_res_spacing
-                    continue
-                self.draw_text_with_outline(draw, x, y, line, font,
-                                            text_color=(255, 255, 255),
-                                            outline_color=(0, 0, 0),
-                                            outline_width=outline_w)
-                y += h + hi_res_spacing
+            # --- 列表区域 ---
+            help_items = data_map.get("help_items", [])
+            start_y = content_y + 90
+            line_height = 65 # 行高
 
-            final_image = await loop.run_in_executor(None, lambda: hi_res_bg.resize(original_size, Image.LANCZOS))
-            await loop.run_in_executor(None, lambda: final_image.save(output_path, quality=95, dpi=(300, 300)))
-            return True, output_path
+            for i, item in enumerate(help_items):
+                cmd_str, desc_str = item
+                
+                # 交替颜色 (蓝/粉)
+                is_blue = (i % 2 == 0)
+                pill_bg = self.CUTE_THEME["pill_blue"] if is_blue else self.CUTE_THEME["pill_pink"]
+                pill_text = self.CUTE_THEME["pill_text_blue"] if is_blue else self.CUTE_THEME["pill_text_pink"]
+                
+                # 绘制指令胶囊 (左侧)
+                # 计算指令文本宽度以调整胶囊大小，但给一个最小宽度保持整齐
+                cmd_bbox = draw.textbbox((0, 0), cmd_str, font=font_cmd)
+                cmd_w = cmd_bbox[2] - cmd_bbox[0]
+                pill_w = max(cmd_w + 40, 180) # 最小宽度180
+                
+                pill_box = (content_x, start_y, content_x + pill_w, start_y + 45)
+                draw.rounded_rectangle(pill_box, radius=22, fill=pill_bg)
+                
+                # 居中绘制指令文字
+                text_x = content_x + (pill_w - cmd_w) / 2
+                draw.text((text_x, start_y + 6), cmd_str, font=font_cmd, fill=pill_text)
+                
+                # 绘制描述文字 (右侧)
+                draw.text((content_x + pill_w + 20, start_y + 8), f"→ {desc_str}", font=font_desc, fill=self.CUTE_THEME["text_main"])
+                
+                start_y += line_height
+
+            # --- 底部提示 ---
+            tip_y = start_y + 10
+            draw.text((content_x, tip_y), "Tip: 地址支持域名或IP:端口 (如 example.com:25566)", font=font_subtitle, fill=self.CUTE_THEME["text_label"])
+
+            # --- 底部右下角信息 (严格对齐修复) ---
+            margin = 35
+            current_time = datetime.datetime.now().strftime("%Y/%m/%d %H:%M")
+            footer_text_1 = f"查询时间：{current_time}"
+            footer_text_2 = "astrbot_plugin_mcstatus | Design by 清蒸云鸭"
+            
+            # 严格计算右对齐坐标
+            def draw_right_align(text, y, font, color):
+                bbox = draw.textbbox((0, 0), text, font=font)
+                w = bbox[2] - bbox[0]
+                # x = 画布宽度 - 边距 - 文字宽度 - 额外的一点padding(确保不贴边)
+                x = W - margin - w - 10 
+                draw.text((x, y), text, font=font, fill=color)
+
+            # 定位到底部
+            footer_base_y = H - margin - 60
+            draw_right_align(footer_text_1, footer_base_y, font_footer, self.CUTE_THEME["text_footer"])
+            draw_right_align(footer_text_2, footer_base_y + 25, font_footer, self.CUTE_THEME["text_footer"])
+
+            await loop.run_in_executor(None, bg.save, self.output_path)
+            return True, self.output_path
         except Exception as e:
-            logger.error(f"[mcstatus]高质量渲染出错: {e}")
+            logger.error(f"帮助图片生成失败: {e}")
+            import traceback
+            traceback.print_exc()
             return False, str(e)
 
-    async def create_standard_quality_image(self, text: str, background: Image.Image, output_path: str,
-                                            seted_font: str, font_size: int = 60, spacing: int = 4):
-        """
-        异步标准质量渲染（不超采样）
-        """
+    # 服务器状态卡片 (保持之前逻辑不变，仅复用 _init_canvas)
+    async def draw_card(self, data_map: Dict, seted_font_name: str) -> Tuple[bool, str]:
         try:
             loop = asyncio.get_event_loop()
-            draw = ImageDraw.Draw(background)
-            width, height = background.size
+            W, H = self.CARD_WIDTH, self.CARD_HEIGHT
+            
+            bg, draw, content_x, content_y = await self._init_canvas(W, H, data_map.get("server_icon", ""))
 
-            font_paths = await loop.run_in_executor(None, lambda: self.get_font_paths(seted_font))
-            font, actual_size = await loop.run_in_executor(
-                None, lambda: self.find_best_font(text, width, font_paths, font_size)
-            )
+            font_title = self.get_font(seted_font_name, 42) 
+            font_motd2 = self.get_font(seted_font_name, 28)
+            font_label = self.get_font(seted_font_name, 24)
+            font_val = self.get_font(seted_font_name, 28)
+            font_small = self.get_font(seted_font_name, 22)
+            font_footer = self.get_font(seted_font_name, 18)
 
-            max_w, total_h, per_line = self._measure_multiline(draw, text, font, spacing=spacing)
-            outline_w = max(1, int(1))
+            motd_raw = data_map.get("motd_raw", "Unknown Server")
+            motd_lines = motd_raw.split("\n")
+            self.draw_colored_text(draw, (content_x, content_y), motd_lines[0], font_title)
+            if len(motd_lines) > 1:
+                self.draw_colored_text(draw, (content_x, content_y + 55), motd_lines[1], font_motd2)
 
-            # 左上角 60,60 起点
-            y = 60
-            for idx, line in enumerate(text.splitlines() or [text]):
-                w, h = per_line[idx]
-                x = 60  # 左对齐固定 x
-                if line == "":
-                    y += h + spacing
-                    continue
-                self.draw_text_with_outline(draw, x, y, line, font,
-                                            text_color=(255, 255, 255),
-                                            outline_color=(0, 0, 0),
-                                            outline_width=outline_w)
-                y += h + spacing
+            grid_y = content_y + 120
+            col_gap = 240 
+            
+            def draw_field(x, y, label_text, value_text, label_pill_color=None, value_color=None, max_len=0):
+                bg_col = label_pill_color if label_pill_color else self.CUTE_THEME["pill_pink"]
+                self.draw_cute_label(draw, x, y, label_text, font_label, bg_col)
+                val_str = str(value_text)
+                fill_col = value_color if value_color else self.CUTE_THEME["text_main"]
+                start_y = y + 38
+                if max_len > 0 and len(val_str) > max_len:
+                    bbox = font_val.getbbox("Ay")
+                    line_height = (bbox[3] - bbox[0]) + 5
+                    for i in range(0, len(val_str), max_len):
+                        chunk = val_str[i:i + max_len]
+                        draw.text((x + 5, start_y), chunk, font=font_val, fill=fill_col)
+                        start_y += line_height
+                else:
+                    draw.text((x + 5, start_y), val_str, font=font_val, fill=fill_col)
 
-            await loop.run_in_executor(None, lambda: background.save(output_path, quality=95, dpi=(300, 300)))
-            return True, output_path
+            draw_field(content_x, grid_y, "地址", data_map.get("addr", "Unknown"), max_len=10)
+            draw_field(content_x + col_gap, grid_y, "版本", data_map.get("version", "Unknown"),
+                       label_pill_color=self.CUTE_THEME["pill_blue"],
+                       value_color=self.CUTE_THEME["pill_text_blue"])
+            draw_field(content_x + col_gap*2, grid_y, "协议", data_map.get("protocol", "?"))
+            latency = data_map.get("latency", 0)
+            lat_color = self.CUTE_THEME["ping_good"] if latency < 100 else (self.CUTE_THEME["ping_mid"] if latency < 200 else self.CUTE_THEME["ping_bad"])
+            draw_field(content_x + col_gap*3, grid_y, "延迟", f"{latency}ms", value_color=lat_color)
+
+            list_y = grid_y + 130
+            players = data_map.get("players", [])
+            self.draw_cute_label(draw, content_x, list_y, "在线列表", font_label, self.CUTE_THEME["pill_blue"], self.CUTE_THEME["pill_text_blue"])
+            display_limit = 4
+            if not players: player_str = "当前没有可爱的玩家在线哦~"
+            else:
+                player_str = ", ".join(players[:display_limit])
+                if len(players) > display_limit: player_str += f" 等 {len(players)} 人"
+            draw.text((content_x + 5, list_y + 40), player_str, font=font_small, fill=self.CUTE_THEME["text_main"])
+
+            margin = 35
+            bar_h = 20
+            bar_y = H - margin - 90
+            bar_x = margin + 40
+            bar_w = W - (margin * 2) - 80
+
+            online = data_map.get("online", 0)
+            max_p = data_map.get("max", 1)
+            if max_p == 0: max_p = 1
+            ratio = min(online / max_p, 1.0)
+
+            draw.text((bar_x + 5, bar_y - 38), f"在线人数: {online} / {max_p}", font=font_val, fill=self.CUTE_THEME["text_main"])
+            bar_radius = bar_h / 2
+            draw.rounded_rectangle((bar_x, bar_y, bar_x + bar_w, bar_y + bar_h), 
+                                   radius=bar_radius, fill=self.CUTE_THEME["progress_bg"], outline=self.CUTE_THEME["progress_border"], width=2)
+            if ratio > 0:
+                fill_w = int(bar_w * ratio)
+                fill_w = max(fill_w, bar_h)
+                draw.rounded_rectangle((bar_x, bar_y, bar_x + fill_w, bar_y + bar_h), 
+                                       radius=bar_radius, fill=self.CUTE_THEME["progress_fill"])
+
+            # 底部信息
+            def draw_right_align(text, y, font, color):
+                bbox = draw.textbbox((0, 0), text, font=font)
+                w = bbox[2] - bbox[0]
+                x = W - margin - w - 10 
+                draw.text((x, y), text, font=font, fill=color)
+
+            current_time = datetime.datetime.now().strftime("%Y/%m/%d %H:%M")
+            footer_text_1 = f"查询时间：{current_time}"
+            footer_text_2 = "astrbot_plugin_mcstatus | Design by 清蒸云鸭"
+            footer_base_y = bar_y + 35
+            draw_right_align(footer_text_1, footer_base_y, font_footer, self.CUTE_THEME["text_footer"])
+            draw_right_align(footer_text_2, footer_base_y + 22, font_footer, self.CUTE_THEME["text_footer"])
+
+            await loop.run_in_executor(None, bg.save, self.output_path)
+            return True, self.output_path
+
         except Exception as e:
-            logger.error(f"[mcstatus]标准质量渲染出错: {e}")
+            logger.error(f"绘图失败: {e}")
+            import traceback
+            traceback.print_exc()
             return False, str(e)
-
-    # -------------------- 主入口 & 快速接口 --------------------
-    async def create_image_with_text(self,
-                                     text: str,
-                                     background_path: str = os.path.join(os.path.dirname(__file__), '..', 'assets', 'bg.png'),
-                                     output_path: str = None,
-                                     seted_font: str = "cute_font.ttf",
-                                     font_size: int = 60,
-                                     target_size: Tuple[int, int] = None,
-                                     min_width: int = 800,
-                                     use_high_quality: bool = True,
-                                     resize_method: int = Image.LANCZOS,
-                                     spacing: int = 4):
-        """
-        异步生成带文字的图片（自动选择高质量/标准）
-        spacing: 行间距（像素）
-        """
-        try:
-            if output_path is None:
-                output_path = self.output
-
-            loop = asyncio.get_event_loop()
-            # 检查底图是否存在
-            if not await loop.run_in_executor(None, os.path.exists, background_path):
-                error_msg = f"[mcstatus]错误: 找不到底图文件 {background_path}"
-                logger.error(error_msg)
-                return False, error_msg
-
-            # 打开并转换模式（保留 alpha）
-            background = await loop.run_in_executor(None, lambda: Image.open(background_path).convert("RGBA"))
-            logger.info(f"[mcstatus]原始图片尺寸: {background.size}")
-
-            # 最小宽度放大，或调整到目标尺寸
-            if background.size[0] < min_width:
-                scale = min_width / background.size[0]
-                new_height = int(background.size[1] * scale)
-                new_size = (min_width, new_height)
-                background = await loop.run_in_executor(None, lambda: background.resize(new_size, Image.LANCZOS))
-                logger.info(f"[mcstatus]放大图片尺寸为: {new_size}")
-
-            if target_size and len(target_size) == 2:
-                background = await loop.run_in_executor(None, lambda: background.resize(target_size, resize_method))
-                logger.info(f"[mcstatus]调整图片尺寸为: {target_size}")
-
-            # 选择渲染
-            if use_high_quality and len(text) <= 50:
-                success, result = await self.create_high_quality_image(
-                    text, background, output_path, seted_font, font_size, scale_factor=2, spacing=spacing
-                )
-            else:
-                success, result = await self.create_standard_quality_image(
-                    text, background, output_path, seted_font, font_size, spacing=spacing
-                )
-
-            if success:
-                logger.info(f"[mcstatus]图片生成成功: {output_path}")
-                return True, output_path
-            else:
-                return False, result
-
-        except Exception as e:
-            error_msg = f"[mcstatus]生成图片时出错: {e}"
-            logger.error(error_msg)
-            return False, error_msg
-
-    async def create_motd_image(self,
-                                server_name: str,
-                                server_addr: str,
-                                server_motd: str,
-                                player_num: int,
-                                player_max_num: int,
-                                players: list[str], #在线玩家
-                                ping: int
-                                ):
-        pass
