@@ -1,5 +1,5 @@
 # Astrbot Plugin MCStatus
-**v2.0.0** 全新版本上线~
+**v2.0.1** 全新版本上线~
 AstrBot Plugin - MCStatus  
 Author: 清蒸云鸭  
 
@@ -57,11 +57,12 @@ git clone https://cdn.gh-proxy.com/https://github.com/WhiteCloudOL/astrbot_plugi
 2. 群组黑白名单检查
 3. 移除draw命令
 
-### v2.0.0
+### v2.0.0 / v2.0.1
 *(2025/12/29)*
 1. 支持查询服务器图标  
 2. 支持MOTD彩色渲染  
 3. 大幅美化插件输出  
+4. 添加了插件图标  
 
 # TODO
 ❌分群存储  
