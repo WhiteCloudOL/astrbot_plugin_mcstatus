@@ -6,9 +6,8 @@ from .core.data_manager import DataManager
 from .core.command_func import CommandFunc
 from typing import Tuple
 
-plugin_version = "2.0.0"
+plugin_version = "2.0.2"
 
-@register("mcstatus", "WhiteCloudCN", "一个获取MC服务器状态的插件", plugin_version)
 class mcstatus(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -20,7 +19,6 @@ class mcstatus(Star):
         self.datamanager = DataManager(config_file=plugin_data_dir / "mcstatus.json")
         self.datamanager.load_config()
 
-        # 将 plugin_data_dir 传递给 CommandFunc
         self.commandFunc = CommandFunc(admin_list=self.admin_list,
                                        datamanager=self.datamanager,
                                        plugin_version=plugin_version,
