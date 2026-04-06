@@ -1,12 +1,13 @@
-from astrbot.api import AstrBotConfig, logger
-from astrbot.api.event import filter, AstrMessageEvent
-from astrbot.api.star import Context, Star, StarTools, register
-from astrbot.core.platform.message_type import MessageType
-from .core.data_manager import DataManager
-from .core.command_func import CommandFunc
-from typing import Tuple
 
-plugin_version = "2.0.2"
+from astrbot.api import AstrBotConfig, logger
+from astrbot.api.event import AstrMessageEvent, filter
+from astrbot.api.star import Context, Star, StarTools
+from astrbot.core.platform.message_type import MessageType
+
+from .core.command_func import CommandFunc
+from .core.data_manager import DataManager
+
+plugin_version = "2.0.3"
 
 class mcstatus(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -15,7 +16,7 @@ class mcstatus(Star):
         plugin_data_dir = StarTools.get_data_dir("mcstatus")
         self.bot_config = context.get_config()
         self.admin_list = self.bot_config["admins_id"]
-        
+
         self.datamanager = DataManager(config_file=plugin_data_dir / "mcstatus.json")
         self.datamanager.load_config()
 
@@ -30,10 +31,10 @@ class mcstatus(Star):
         group_id = event.get_group_id()
         if not group_id: # 私聊
              return True
-             
+
         mode = self.config["divide_group"]["block_method"]
         group_list = self.config["divide_group"].get("control_list",[])
-        
+
         if event.get_message_type() != MessageType.GROUP_MESSAGE:
             return True
         if mode == "blacklist":
@@ -46,7 +47,7 @@ class mcstatus(Star):
             return False
         return False
 
-    @filter.command("mcstatus", alias=set(["mc状态","MC状态","mcs"]))
+    @filter.command("mcstatus", alias={"mc状态","MC状态","mcs"})
     async def mcstatus(self,
                        event: AstrMessageEvent,
                        subcommand: str = "",
@@ -57,9 +58,9 @@ class mcstatus(Star):
         """
         if not self.enabled_group_check(event):
             return
-            
+
         # 初始化返回结果变量
-        result_tuple: Tuple[bool, str] = (False, "")
+        result_tuple: tuple[bool, str] = (False, "")
 
         match subcommand:
             case "":
