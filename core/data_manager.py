@@ -4,16 +4,13 @@ import re
 from pathlib import Path
 
 from astrbot.api import logger
-from astrbot.api.star import StarTools
 
 
 class DataManager:
-    def __init__(self, config_file: Path = None): #type: ignore
-        if config_file is None:
-            plugin_data_dir = StarTools.get_data_dir("mcstatus")
-            config_file=plugin_data_dir / "mcstatus.json"
-        self.config_file = config_file
-        self.config_data = {}  # 使用字典存储多个标识符的配置
+    def __init__(self, config_dir: Path):
+        self.config_dir = config_dir
+        self.config_file = config_dir / "data.json"
+        self.config_data = {}
 
 
     def load_config(self) -> bool:
@@ -28,10 +25,17 @@ class DataManager:
 
             if loaded_data is not None and isinstance(loaded_data, dict):
                 self.config_data = loaded_data
+                if "group_id" not in self.config_data:
+                    self.config_data["group_id"] = {}
+                if "user_id" not in self.config_data:
+                    self.config_data["user_id"] = {}
                 return True
             else:
                 logger.error("配置文件格式错误，使用空配置")
-                self.config_data = {}
+                self.config_data = {
+                    "group_id": {},
+                    "user_id": {}
+                }
                 self.save_config()
                 return False
 
@@ -63,45 +67,73 @@ class DataManager:
         pattern = r"^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*|((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?))(:[1-9][0-9]{0,4}|:[1-5][0-9]{4}|:6[0-4][0-9]{3}|:65[0-4][0-9]{2}|:655[0-2][0-9]|:6553[0-5])?$"
         return bool(re.match(pattern, server_addr))
 
-    def get_all_configs(self) -> dict[str, str]:
-        return self.config_data.copy()
+    def _get_target_dict(self, group_id: str | None, user_id: str | None, is_global: bool = False) -> dict:
+        if "global" not in self.config_data:
+            self.config_data["global"] = {}
+        if "group_id" not in self.config_data:
+            self.config_data["group_id"] = {}
+        if "user_id" not in self.config_data:
+            self.config_data["user_id"] = {}
 
-    def get_server_addr(self, identifier: str) -> str | None:
-        return self.config_data.get(identifier)
+        if is_global:
+            return self.config_data["global"]
 
-    def add_server_addr(self, identifier: str, server_addr: str) -> bool:
+        if group_id:
+            if group_id not in self.config_data["group_id"]:
+                self.config_data["group_id"][group_id] = {}
+            return self.config_data["group_id"][group_id]
+        elif user_id:
+            if user_id not in self.config_data["user_id"]:
+                self.config_data["user_id"][user_id] = {}
+            return self.config_data["user_id"][user_id]
+        return self.config_data["global"]
+
+    def get_all_configs(self, group_id: str | None, user_id: str | None, is_global: bool = False) -> dict[str, str]:
+        target = self._get_target_dict(group_id, user_id, is_global)
+        return target.copy()
+
+    def get_server_addr(self, identifier: str, group_id: str | None, user_id: str | None, is_global: bool = False) -> str | None:
+        target = self._get_target_dict(group_id, user_id, is_global)
+        return target.get(identifier)
+
+    def add_server_addr(self, identifier: str, server_addr: str, group_id: str | None, user_id: str | None, is_global: bool = False) -> bool:
         if not identifier or not server_addr:
             return False
         if not self.check_server_addr(server_addr):
             return False
-        self.config_data[identifier] = server_addr
+        target = self._get_target_dict(group_id, user_id, is_global)
+        target[identifier] = server_addr
         self.save_config()
         return True
 
-    def update_server_addr(self, identifier: str, new_server_addr: str) -> bool:
-        if identifier not in self.config_data:
+    def update_server_addr(self, identifier: str, new_server_addr: str, group_id: str | None, user_id: str | None, is_global: bool = False) -> bool:
+        target = self._get_target_dict(group_id, user_id, is_global)
+        if identifier not in target:
             return False
         if not self.check_server_addr(new_server_addr):
             return False
-        self.config_data[identifier] = new_server_addr
+        target[identifier] = new_server_addr
         self.save_config()
         return True
 
-    def remove_server_addr(self, identifier: str) -> bool:
-        if identifier in self.config_data:
-            del self.config_data[identifier]
+    def remove_server_addr(self, identifier: str, group_id: str | None, user_id: str | None, is_global: bool = False) -> bool:
+        target = self._get_target_dict(group_id, user_id, is_global)
+        if identifier in target:
+            del target[identifier]
             self.save_config()
             return True
         return False
 
-    def clear_all_configs(self) -> bool:
+    def clear_all_configs(self, group_id: str | None, user_id: str | None, is_global: bool = False) -> bool:
         try:
-            self.config_data.clear()
+            target = self._get_target_dict(group_id, user_id, is_global)
+            target.clear()
             self.save_config()
             return True
         except Exception as e:
             logger.error(f"清除数据失败，错误原因：{e}")
             return False
 
-    def has_identifier(self, identifier: str) -> bool:
-        return identifier in self.config_data
+    def has_identifier(self, identifier: str, group_id: str | None, user_id: str | None, is_global: bool = False) -> bool:
+        target = self._get_target_dict(group_id, user_id, is_global)
+        return identifier in target

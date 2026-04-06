@@ -2,3 +2,4 @@
 __pycache__/
 *.pyc
 core/__pycache__/
+.DS_Store

@@ -1,4 +1,7 @@
+import glob
 import os
+import time
+import uuid
 
 from mcstatus import JavaServer
 
@@ -15,37 +18,79 @@ class CommandFunc:
         self.datamanager = datamanager
         self.plugin_version = plugin_version
         self.config = config
+        self.plugin_data_dir = plugin_data_dir
 
-        draw_temp_path = os.path.join(plugin_data_dir, "temp_status.png")
+        self.images_dir = os.path.join(plugin_data_dir, "data")
+        os.makedirs(self.images_dir, exist_ok=True)
+
         bg_name = config.get("bg", "bg.jpg")
         if isinstance(bg_name, dict):
             bg_name = "bg.jpg"
 
-        self.drawer = Draw(output_path=draw_temp_path, bg_path=str(bg_name))
+        self.bg_name = str(bg_name)
+
+    def _get_new_image_path(self) -> str:
+        """生成新的图片路径并清理旧缓存"""
+        max_temp = self.config.get("max_temp", 5)
+
+        # 清理旧缓存
+        existing_images = glob.glob(os.path.join(self.images_dir, "*.png"))
+        if len(existing_images) >= max_temp:
+            # 按修改时间排序，最旧的在前面
+            existing_images.sort(key=os.path.getmtime)
+            # 删除多余的图片
+            for img_to_del in existing_images[:len(existing_images) - max_temp + 1]:
+                try:
+                    os.remove(img_to_del)
+                except Exception as e:
+                    logger.error(f"清理缓存图片失败: {e}")
+
+        # 生成新路径
+        new_filename = f"mcstatus_{int(time.time())}_{uuid.uuid4().hex[:8]}.png"
+        return os.path.join(self.images_dir, new_filename)
+
+    @property
+    def is_global(self) -> bool:
+        divide_group = self.config.get("divide_group", {})
+        return not divide_group.get("divide_data", False)
 
     async def _lookup_server(self, server_addr: str):
+        """
+        尝试查询服务器信息，支持自动重试和超时处理
+        """
         try:
             server = await JavaServer.async_lookup(server_addr)
             status = await server.async_status()
             return server, status
         except Exception as e:
-            logger.error(f"查询服务器信息失败, 原因: {str(e)}")
+            error_msg = str(e)
+            if "Socket did not respond" in error_msg or "WinError 64" in error_msg:
+                logger.warning(f"服务器 {server_addr} 响应超时或连接中断")
+            else:
+                logger.error(f"查询服务器 {server_addr} 失败: {error_msg}")
             return None, None
 
     async def get_server_status(self, server_addr: str) -> dict | None:
         try:
+            if not server_addr:
+                return None
             server_addr = server_addr.strip()
         except Exception:
             return None
 
         try:
+            # 第一次尝试：原始地址
             server, status = await self._lookup_server(server_addr)
+
+            # 第二次尝试：如果失败且没有端口，补全默认端口 25565
+            if status is None and ":" not in server_addr:
+                retry_addr = f"{server_addr}:25565"
+                server, status = await self._lookup_server(retry_addr)
+                if status is not None:
+                    server_addr = retry_addr
+
             if status is None:
-                if ":" not in server_addr:
-                    server_addr = f"{server_addr}:25565"
-                server, status = await self._lookup_server(server_addr)
-                if status is None:
-                    return None
+                return None
 
             motd_raw = "Unknown"
             if hasattr(status, "description"):
@@ -79,7 +124,8 @@ class CommandFunc:
 
     async def _generate_image_response(self, data_map: dict) -> tuple[bool, str]:
         font_name = self.config["font"]
-        success, result = await self.drawer.draw_card(data_map, font_name)
+        drawer = Draw(output_path=self._get_new_image_path(), bg_path=self.bg_name)
+        success, result = await drawer.draw_card(data_map, font_name)
         if success:
             return True, result
         else:
@@ -88,7 +134,8 @@ class CommandFunc:
     # 帮助图片生成专用入口
     async def _generate_help_response(self, data_map: dict) -> tuple[bool, str]:
         font_name = self.config["font"]
-        success, result = await self.drawer.draw_help(data_map, font_name)
+        drawer = Draw(output_path=self._get_new_image_path(), bg_path=self.bg_name)
+        success, result = await drawer.draw_help(data_map, font_name)
         if success:
             return True, result
         else:
@@ -97,7 +144,8 @@ class CommandFunc:
     # 列表图片生成专用入口
     async def _generate_list_response(self, data_map: dict) -> tuple[bool, str]:
         font_name = self.config["font"]
-        success, result = await self.drawer.draw_list(data_map, font_name)
+        drawer = Draw(output_path=self._get_new_image_path(), bg_path=self.bg_name)
+        success, result = await drawer.draw_list(data_map, font_name)
         if success:
             return True, result
         else:
@@ -131,13 +179,13 @@ class CommandFunc:
     async def _handle_look(self, event: AstrMessageEvent, server_name: str) -> tuple[bool, str]:
         if not server_name:
             return False, "用法：/mcs look <名称>"
-        addr = self.datamanager.get_server_addr(server_name)
+        addr = self.datamanager.get_server_addr(server_name, event.get_group_id(), event.get_sender_id(), self.is_global)
         if addr is None:
             return False, f"❌ 未找到 {server_name}"
         return await self._handle_motd(event, addr)
 
     async def _handle_list(self, event: AstrMessageEvent) -> tuple[bool, str]:
-        data = self.datamanager.get_all_configs()
+        data = self.datamanager.get_all_configs(event.get_group_id(), event.get_sender_id(), self.is_global)
         data_map = {
             "servers": data
         }
@@ -166,7 +214,7 @@ class CommandFunc:
     async def _handle_add(self, event: AstrMessageEvent, server_name: str, server_addr: str) -> tuple[bool, str]:
         if not server_name or not server_addr:
             return False, "用法：/mcs add [名称] [地址]"
-        if self.datamanager.add_server_addr(server_name, server_addr):
+        if self.datamanager.add_server_addr(server_name, server_addr, event.get_group_id(), event.get_sender_id(), self.is_global):
             return False, f"✅ 服务器 {server_name} 添加成功！"
         else:
             return False, "❌ 添加失败。"
@@ -174,7 +222,7 @@ class CommandFunc:
     async def _handle_del(self, event: AstrMessageEvent, server_name: str) -> tuple[bool, str]:
         if not server_name:
             return False, "用法：/mcs del [名称]"
-        if self.datamanager.remove_server_addr(server_name):
+        if self.datamanager.remove_server_addr(server_name, event.get_group_id(), event.get_sender_id(), self.is_global):
             return False, f"✅ 服务器 {server_name} 删除成功！"
         else:
             return False, "❌ 未找到。"
@@ -182,13 +230,13 @@ class CommandFunc:
     async def _handle_set(self, event: AstrMessageEvent, server_name: str, server_addr: str) -> tuple[bool, str]:
         if not server_name or not server_addr:
             return False, "用法：/mcs set [名] [地址]"
-        if self.datamanager.update_server_addr(server_name, server_addr):
+        if self.datamanager.update_server_addr(server_name, server_addr, event.get_group_id(), event.get_sender_id(), self.is_global):
             return False, "✅ 更新成功。"
         return False, "❌ 更新失败。"
 
     async def _handle_clear(self, event: AstrMessageEvent) -> tuple[bool, str]:
         if event.get_sender_id() not in self.admin_list:
             return False, "❌ 权限不足"
-        if self.datamanager.clear_all_configs():
+        if self.datamanager.clear_all_configs(event.get_group_id(), event.get_sender_id(), self.is_global):
             return False, "✅ 已清空。"
         return False, "❌ 失败。"
