@@ -7,7 +7,7 @@ from astrbot.core.platform.message_type import MessageType
 from .core.command_func import CommandFunc
 from .core.data_manager import DataManager
 
-plugin_version = "2.1.0"
+plugin_version = "2.1.1"
 
 class mcstatus(Star):
     def __init__(self, context: Context, config: AstrBotConfig):

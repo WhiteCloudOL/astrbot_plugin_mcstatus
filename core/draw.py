@@ -400,9 +400,8 @@ class Draw:
     async def draw_card(self, data_map: dict, seted_font_name: str) -> tuple[bool, str]:
         try:
             loop = asyncio.get_event_loop()
-            W, H = self.CARD_WIDTH, self.CARD_HEIGHT
-
-            bg, draw, content_x, content_y = await self._init_canvas(W, H, data_map.get("server_icon", ""))
+            W = self.CARD_WIDTH
+            margin = 35
 
             font_title = self.get_font(seted_font_name, 42)
             font_motd2 = self.get_font(seted_font_name, 28)
@@ -411,70 +410,172 @@ class Draw:
             font_small = self.get_font(seted_font_name, 22)
             font_footer = self.get_font(seted_font_name, 18)
 
-            motd_raw = data_map.get("motd_raw", "Unknown Server")
-            motd_lines = motd_raw.split("\n")
-            self.draw_colored_text(draw, (content_x, content_y), motd_lines[0], font_title)
-            if len(motd_lines) > 1:
-                self.draw_colored_text(draw, (content_x, content_y + 55), motd_lines[1], font_motd2)
+            temp_img = Image.new("RGBA", (W, 100))
+            temp_draw = ImageDraw.Draw(temp_img)
 
-            grid_y = content_y + 120
+            def _text_height(font) -> int:
+                bbox = temp_draw.textbbox((0, 0), "Ay", font=font)
+                return bbox[3] - bbox[1]
+
+            def _text_width(text: str, font) -> int:
+                bbox = temp_draw.textbbox((0, 0), text, font=font)
+                return bbox[2] - bbox[0]
+
+            def wrap_value_to_lines(text: str, font, max_w: int, max_lines: int = 2) -> list[str]:
+                if not text:
+                    return [""]
+
+                lines: list[str] = []
+                current_line = ""
+                for char in text:
+                    test_line = current_line + char
+                    if _text_width(test_line, font) > max_w and current_line:
+                        lines.append(current_line)
+                        current_line = char
+                        if len(lines) >= max_lines:
+                            last = lines[-1]
+                            ellipsis_w = _text_width("...", font)
+                            while last and _text_width(last, font) + ellipsis_w > max_w:
+                                last = last[:-1]
+                            lines[-1] = (last + "...") if last else "..."
+                            return lines
+                    else:
+                        current_line = test_line
+
+                if current_line:
+                    lines.append(current_line)
+
+                if len(lines) > max_lines:
+                    keep = lines[:max_lines - 1]
+                    last = lines[max_lines - 1]
+                    ellipsis_w = _text_width("...", font)
+                    while last and _text_width(last, font) + ellipsis_w > max_w:
+                        last = last[:-1]
+                    keep.append((last + "...") if last else "...")
+                    return keep
+
+                return lines
+
             col_gap = 240
+            field_value_max_w = col_gap - 30
 
-            def draw_field(x, y, label_text, value_text, label_pill_color=None, value_color=None, max_len=0):
+            def measure_field(value_text: str) -> int:
+                label_h = _text_height(font_label) + 8
+                gap = 8
+                val_lines = wrap_value_to_lines(str(value_text), font_val, field_value_max_w, 2)
+                val_line_h = _text_height(font_val) + 5
+                return label_h + gap + len(val_lines) * val_line_h
+
+            motd_raw = data_map.get("motd_raw", "Unknown Server")
+            motd_lines_raw = motd_raw.split("\n")
+
+            content_y_init = margin + 50
+            y = content_y_init + _text_height(font_title) + 8
+            if len(motd_lines_raw) > 1:
+                y += _text_height(font_motd2) + 5
+            y += 30
+
+            fields_info = [
+                ("地址", data_map.get("addr", "Unknown")),
+                ("版本", data_map.get("version", "Unknown")),
+                ("协议", data_map.get("protocol", "?")),
+                ("延迟", f"{data_map.get('latency', 0)}ms"),
+            ]
+            max_field_h = max(measure_field(value) for _, value in fields_info)
+            y += max_field_h + 30
+
+            y += _text_height(font_label) + 8
+            y += 8
+
+            players = data_map.get("players", [])
+            display_limit = 4
+            if not players:
+                player_str = "当前没有可爱的玩家在线哦~"
+            else:
+                player_str = ", ".join(players[:display_limit])
+                if len(players) > display_limit:
+                    player_str += f" 等 {len(players)} 人"
+
+            max_player_w = W - margin * 2 - 80
+            player_lines = wrap_value_to_lines(player_str, font_small, max_player_w, 2)
+            player_line_h = _text_height(font_small) + 5
+            y += len(player_lines) * player_line_h + 25
+
+            bar_h = 20
+            y += _text_height(font_val) + 5
+            y += bar_h + 10
+
+            footer_line_h = _text_height(font_footer) + 5
+            y += footer_line_h * 2 + 5
+
+            H = max(y + margin, 300)
+            bg, draw, content_x, content_y = await self._init_canvas(W, H, data_map.get("server_icon", ""))
+
+            self.draw_colored_text(draw, (content_x, content_y), motd_lines_raw[0], font_title)
+            y_cursor = content_y + _text_height(font_title) + 8
+            if len(motd_lines_raw) > 1:
+                self.draw_colored_text(draw, (content_x, y_cursor), motd_lines_raw[1], font_motd2)
+                y_cursor += _text_height(font_motd2) + 5
+            y_cursor += 30
+
+            def draw_field(x, y, label_text, value_text, label_pill_color=None, value_color=None):
                 bg_col = label_pill_color if label_pill_color else self.CUTE_THEME["pill_pink"]
                 self.draw_cute_label(draw, x, y, label_text, font_label, bg_col)
                 val_str = str(value_text)
                 fill_col = value_color if value_color else self.CUTE_THEME["text_main"]
-                start_y = y + 38
-                if max_len > 0 and len(val_str) > max_len:
-                    bbox = font_val.getbbox("Ay")
-                    line_height = (bbox[3] - bbox[0]) + 5
-                    for i in range(0, len(val_str), max_len):
-                        chunk = val_str[i:i + max_len]
-                        draw.text((x + 5, start_y), chunk, font=font_val, fill=fill_col)
-                        start_y += line_height
-                else:
-                    draw.text((x + 5, start_y), val_str, font=font_val, fill=fill_col)
+                start_y = y + _text_height(font_label) + 8
+                val_lines = wrap_value_to_lines(val_str, font_val, field_value_max_w, 2)
+                val_line_h = _text_height(font_val) + 5
+                for line in val_lines:
+                    draw.text((x + 5, start_y), line, font=font_val, fill=fill_col)
+                    start_y += val_line_h
 
-            draw_field(content_x, grid_y, "地址", data_map.get("addr", "Unknown"), max_len=10)
-            draw_field(content_x + col_gap, grid_y, "版本", data_map.get("version", "Unknown"),
+            draw_field(content_x, y_cursor, "地址", data_map.get("addr", "Unknown"))
+            draw_field(content_x + col_gap, y_cursor, "版本", data_map.get("version", "Unknown"),
                        label_pill_color=self.CUTE_THEME["pill_blue"],
                        value_color=self.CUTE_THEME["pill_text_blue"])
-            draw_field(content_x + col_gap*2, grid_y, "协议", data_map.get("protocol", "?"))
+            draw_field(content_x + col_gap * 2, y_cursor, "协议", data_map.get("protocol", "?"))
             latency = data_map.get("latency", 0)
-            lat_color = self.CUTE_THEME["ping_good"] if latency < 100 else (self.CUTE_THEME["ping_mid"] if latency < 200 else self.CUTE_THEME["ping_bad"])
-            draw_field(content_x + col_gap*3, grid_y, "延迟", f"{latency}ms", value_color=lat_color)
+            lat_color = self.CUTE_THEME["ping_good"] if latency < 100 else (
+                self.CUTE_THEME["ping_mid"] if latency < 200 else self.CUTE_THEME["ping_bad"])
+            draw_field(content_x + col_gap * 3, y_cursor, "延迟", f"{latency}ms", value_color=lat_color)
 
-            list_y = grid_y + 130
-            players = data_map.get("players", [])
-            self.draw_cute_label(draw, content_x, list_y, "在线列表", font_label, self.CUTE_THEME["pill_blue"], self.CUTE_THEME["pill_text_blue"])
-            display_limit = 4
-            if not players: player_str = "当前没有可爱的玩家在线哦~"
-            else:
-                player_str = ", ".join(players[:display_limit])
-                if len(players) > display_limit: player_str += f" 等 {len(players)} 人"
-            draw.text((content_x + 5, list_y + 40), player_str, font=font_small, fill=self.CUTE_THEME["text_main"])
+            y_cursor += max_field_h + 30
 
-            margin = 35
-            bar_h = 20
-            bar_y = H - margin - 90
-            bar_x = margin + 40
-            bar_w = W - (margin * 2) - 80
+            self.draw_cute_label(draw, content_x, y_cursor, "在线列表", font_label,
+                                 self.CUTE_THEME["pill_blue"], self.CUTE_THEME["pill_text_blue"])
+            y_cursor += _text_height(font_label) + 8 + 8
+
+            for line in player_lines:
+                draw.text((content_x + 5, y_cursor), line, font=font_small,
+                          fill=self.CUTE_THEME["text_main"])
+                y_cursor += player_line_h
+
+            y_cursor += 25
 
             online = data_map.get("online", 0)
             max_p = data_map.get("max", 1)
-            if max_p == 0: max_p = 1
+            if max_p == 0:
+                max_p = 1
             ratio = min(online / max_p, 1.0)
 
-            draw.text((bar_x + 5, bar_y - 38), f"在线人数: {online} / {max_p}", font=font_val, fill=self.CUTE_THEME["text_main"])
+            bar_x = margin + 40
+            bar_w = W - (margin * 2) - 80
+            bar_y = y_cursor + _text_height(font_val) + 5
+
+            draw.text((bar_x + 5, y_cursor), f"在线人数: {online} / {max_p}",
+                      font=font_val, fill=self.CUTE_THEME["text_main"])
             bar_radius = bar_h / 2
             draw.rounded_rectangle((bar_x, bar_y, bar_x + bar_w, bar_y + bar_h),
-                                   radius=bar_radius, fill=self.CUTE_THEME["progress_bg"], outline=self.CUTE_THEME["progress_border"], width=2)
+                                   radius=bar_radius, fill=self.CUTE_THEME["progress_bg"],
+                                   outline=self.CUTE_THEME["progress_border"], width=2)
             if ratio > 0:
                 fill_w = int(bar_w * ratio)
                 fill_w = max(fill_w, bar_h)
                 draw.rounded_rectangle((bar_x, bar_y, bar_x + fill_w, bar_y + bar_h),
                                        radius=bar_radius, fill=self.CUTE_THEME["progress_fill"])
+
+            y_cursor = bar_y + bar_h + 10
 
             # 底部信息
             def draw_right_align(text, y, font, color):
@@ -486,9 +587,10 @@ class Draw:
             current_time = datetime.datetime.now().strftime("%Y/%m/%d %H:%M")
             footer_text_1 = f"查询时间：{current_time}"
             footer_text_2 = "astrbot_plugin_mcstatus | Design by 清蒸云鸭"
-            footer_base_y = bar_y + 35
-            draw_right_align(footer_text_1, footer_base_y, font_footer, self.CUTE_THEME["text_footer"])
-            draw_right_align(footer_text_2, footer_base_y + 22, font_footer, self.CUTE_THEME["text_footer"])
+            draw_right_align(footer_text_1, y_cursor, font_footer, self.CUTE_THEME["text_footer"])
+            draw_right_align(footer_text_2, y_cursor + footer_line_h, font_footer, self.CUTE_THEME["text_footer"])
+
+            del temp_img, temp_draw
 
             await loop.run_in_executor(None, bg.save, self.output_path)
             return True, self.output_path
